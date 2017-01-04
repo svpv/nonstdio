@@ -1,72 +1,52 @@
-// the non-standard input/output
-struct NILE {
+/*
+ * nonstdio - the non-standard input/output library
+ */
+#ifndef NONSTDIO_H
+#define NONSTDIO_H
+
+/* We use memcpy(3); this should also get us size_t. */
+#include <string.h>
+
+/* Symbols defined in this library are not exported. */
+#pragma GCC visibility push(hidden)
+
+/* The non-standard output file */
+struct noFILE {
     int fd;
     size_t fill;
     char buf[BUFSIZ];
 };
 
-typedef struct NILE NILE;
-static struct NILE nonstdout = { .fd = 1 };
+typedef struct noFILE noFILE;
+extern noFILE nonstdout;
 #define nonstdout (&nonstdout)
 
-static void nwrite_(const char *func, NILE *np, const void *buf_, size_t size)
+/* These "tail" functions are called by the inline functions
+ * when the fast case condition does not hold. */
+long nwrite_tail(noFILE *np, const char *buf, size_t size);
+int nflush_tail(noFILE *np);
+
+/* Replacement for fwrite(3): returns 1, which is not dissimilar
+ * to fwrite(buf, size, 1, fp) returning 1, or -1 on error. */
+static inline long nwrite(noFILE *np, const void *buf, size_t size)
 {
-    const char *buf = buf_;
-    while (np->fill + size >= BUFSIZ) {
-	if (np->fill == 0) {
-	    // writing user buf directly
-	    ssize_t ret = write(1, buf, BUFSIZ);
-	    if (ret < 0) {
-		if (errno == EINTR)
-		    continue;
-		die_(func, "%s: %m", "write");
-	    }
-	    buf += ret;
-	    size -= ret;
-	    continue;
-	}
-	// fill np->buf to its full size
-	size_t more = BUFSIZ - np->fill;
-	memcpy(np->buf + np->fill, buf, more);
-	buf += more;
-	size -= more;
-	// need to flush it all
-	char *outbuf = np->buf;
-	size_t outsize = BUFSIZ;
-	do {
-	    ssize_t ret = write(1, outbuf, outsize);
-	    if (ret < 0) {
-		if (errno == EINTR)
-		    continue;
-		die_(func, "%s: %m", "write");
-	    }
-	    outbuf += ret;
-	    outsize -= ret;
-	} while (outsize);
-	np->fill = 0;
-    }
+    if (np->fill + size >= BUFSIZ)
+	return nwrite_tail(np, buf, size);
+    /* memcpy call will be inlined if the size is constant */
     memcpy(np->buf + np->fill, buf, size);
     np->fill += size;
+    return 1;
 }
 
-static void nflush_(const char *func, NILE *np)
+/* Replacement for fflush(3): returns 0 (just like fflush),
+ * or -1 on error. */
+static inline int nflush(noFILE *np)
 {
-    if (np->fill == 0)
-	return;
-    char *outbuf = np->buf;
-    size_t outsize = np->fill;
-    do {
-	ssize_t ret = write(1, outbuf, outsize);
-	if (ret < 0) {
-	    if (errno == EINTR)
-		continue;
-	    die_(func, "%s: %m", "write");
-	}
-	outbuf += ret;
-	outsize -= ret;
-    } while (outsize);
-    np->fill = 0;
+    if (np->fill)
+	return nflush_tail(np);
+    return 0;
 }
 
-#define nwrite(np, buf, size)	nwrite_(__func__, np, buf, size)
-#define nflush(np)		nflush_(__func__, np)
+#pragma GCC visibility pop
+
+#endif
