@@ -7,6 +7,10 @@
 /* We use memcpy(3); this should also get us size_t. */
 #include <string.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Symbols defined in this library are not exported. */
 #pragma GCC visibility push(hidden)
 
@@ -31,7 +35,7 @@ int nflush_tail(noFILE *np);
 static inline long nwrite(noFILE *np, const void *buf, size_t size)
 {
     if (np->fill + size >= BUFSIZ)
-	return nwrite_tail(np, buf, size);
+	return nwrite_tail(np, (const char *) buf, size);
     /* memcpy call will be inlined if the size is constant */
     memcpy(np->buf + np->fill, buf, size);
     np->fill += size;
@@ -48,5 +52,9 @@ static inline int nflush(noFILE *np)
 }
 
 #pragma GCC visibility pop
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
